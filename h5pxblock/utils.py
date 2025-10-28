@@ -10,7 +10,6 @@ from zipfile import ZipFile, is_zipfile
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage as django_default_storage
-from django.core.files.storage import storages
 from django.utils.module_loading import import_string
 
 log = logging.getLogger(__name__)
@@ -32,7 +31,17 @@ def get_h5p_storage():
     # Priority 1: Django 4.2+/5.x STORAGES registry
     storages_config = getattr(settings, 'STORAGES', {})
     if isinstance(storages_config, dict) and "h5pxblock_storage" in storages_config:
-        return storages["h5pxblock_storage"]
+        # Prefer Django's storages registry if available (Django 4.2+/5.x)
+        from django.core.files import storage as storage_module
+        if hasattr(storage_module, 'storages'):
+            return storage_module.storages["h5pxblock_storage"]
+        # Manual instantiation path for environments without the handler
+        cfg = storages_config.get("h5pxblock_storage", {})
+        backend_path = cfg.get("BACKEND")
+        options = cfg.get("OPTIONS", {})
+        if backend_path:
+            backend_cls = import_string(backend_path)
+            return backend_cls(**options)
 
     # Priority 2: Legacy per-app config
     h5p_storage_settings = getattr(settings, "H5PXBLOCK_STORAGE", None)
