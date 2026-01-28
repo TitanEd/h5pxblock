@@ -41,23 +41,44 @@ Use "Preview" button to preview it or publish your content and use "View Live Ve
 
 ![Preview H5P content in LMS](https://github.com/edly-io/h5pxblock/blob/master/docs/images/preview_content.png?raw=true)
 
-### Configuring S3 as a Storage Backend
+### Configuring storage backend (S3 example)
 
-H5P relies on ``DEFAULT_FILE_STORAGE`` setting to stores h5p content. In case of S3 storage, make sure your platform level S3 storage settings are set appropriately. If you either have set ``AWS_QUERYSTRING_AUTH = True`` then you have to set custom S3 storage settings for H5P xblock since singed url are not supported or if you want to store H5P content in a separate S3 bucket instead of default one you have to set custom S3 storage settings too.
+H5P relies on `DEFAULT_FILE_STORAGE` by default. If you want to use a different
+storage for H5P content (e.g., a dedicated S3 bucket, or when `AWS_QUERYSTRING_AUTH = True`
+and you need unsigned URLs), configure one of the following:
 
-Here is the required configuration:
+1. Django ≥ 4.2/5.x (preferred): add a storage entry named `h5pxblock_storage` to `STORAGES`:
+
+```python
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": "/var/media"},
+    },
+    "h5pxblock_storage": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": {
+            "bucket_name": "my-s3-public-bucket",
+            "querystring_auth": False,
+        },
+    },
+}
+```
+
+2. Legacy fallback (still supported):
 
 ```python
 H5PXBLOCK_STORAGE = {
-    "storage_class": "storages.backends.s3boto3.S3Boto3Storage",
-    "settings": {
+    "storage_class": "storages.backends.s3boto3.S3Boto3Storage",  # or "STORAGE_CLASS"
+    "settings": {  # or "STORAGE_KWARGS"
         "bucket_name": "my-s3-public-bucket",
         "querystring_auth": False,
     },
 }
 ```
 
-Please ensure that your bucket is publicly accessible to enable seamless content storage and retrieval via S3.
+Please ensure that your bucket is publicly accessible (or otherwise correctly configured)
+to enable seamless content storage and retrieval via S3.
 
 ## Working with translations
 

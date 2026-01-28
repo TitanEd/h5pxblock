@@ -9,7 +9,8 @@ from zipfile import ZipFile, is_zipfile
 
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage, get_storage_class
+from django.core.files.storage import default_storage as django_default_storage
+from django.utils.module_loading import import_string
 
 log = logging.getLogger(__name__)
 
@@ -21,22 +22,48 @@ def get_h5p_storage():
     """
     Returns storage for h5p content
 
-    If H5PXBLOCK_STORAGE is defined in django settings, intializes storage using the
-    specified settings. Otherwise, returns default_storage.
+    Priority:
+      1) If Django STORAGES defines "h5pxblock_storage", return that instance.
+      2) If legacy H5PXBLOCK_STORAGE is defined, import the class and instantiate
+         with provided settings.
+      3) Fallback to Django's default_storage singleton.
     """
+    # Priority 1: Django 4.2+/5.x STORAGES registry
+    storages_config = getattr(settings, 'STORAGES', {})
+    if isinstance(storages_config, dict) and "h5pxblock_storage" in storages_config:
+        # Prefer Django's storages registry if available (Django 4.2+/5.x)
+        from django.core.files import storage as storage_module
+        if hasattr(storage_module, 'storages'):
+            return storage_module.storages["h5pxblock_storage"]
+        # Manual instantiation path for environments without the handler
+        cfg = storages_config.get("h5pxblock_storage", {})
+        backend_path = cfg.get("BACKEND")
+        options = cfg.get("OPTIONS", {})
+        if backend_path:
+            backend_cls = import_string(backend_path)
+            return backend_cls(**options)
+
+    # Priority 2: Legacy per-app config
     h5p_storage_settings = getattr(settings, "H5PXBLOCK_STORAGE", None)
-
     if not h5p_storage_settings:
-        return default_storage
+        return django_default_storage
 
-    storage_class_import_path = h5p_storage_settings.get("storage_class", None)
-    storage_settings = h5p_storage_settings.get("settings", {})
+    storage_class_import_path = (
+        h5p_storage_settings.get("storage_class")
+        or h5p_storage_settings.get("STORAGE_CLASS")
+    )
+    storage_settings = (
+        h5p_storage_settings.get("settings")
+        or h5p_storage_settings.get("STORAGE_KWARGS")
+        or {}
+    )
 
-    storage_class = get_storage_class(storage_class_import_path)
+    if storage_class_import_path:
+        storage_class = import_string(storage_class_import_path)
+        return storage_class(**storage_settings)
 
-    storage = storage_class(**storage_settings)
-
-    return storage
+    # Priority 3: Fallback to default storage
+    return django_default_storage
 
 
 def str2bool(val):
